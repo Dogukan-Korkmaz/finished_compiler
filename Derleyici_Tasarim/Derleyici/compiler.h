@@ -5,10 +5,12 @@
 #include <stdbool.h>
 #include <string.h>
 
+// Ardarda yazılan operatörleri algılamak için makro oluşturuyorum.
 #define S_EQ(str, str2) \
-        (str && str2 && (strcmp(str, str2) == 0))
+        (str && str2 && (strcmp(str, str2) == 0))// strcmp: str ve str2 değerleri aynı ise True döndürür.
 
 
+// Derlenecek karakterlerin pozisyon değerleri burada tutuluyor(satır, sütun ve dosya).
 struct pos
 {
     int line;
@@ -16,7 +18,7 @@ struct pos
     const char* filename;
 };
 
-
+// Numara karakterlerinin tanımlanması.
 #define NUMERIC_CASE \
     case '0':       \
     case '1':       \
@@ -29,6 +31,7 @@ struct pos
     case '8':       \
     case '9' 
 
+// Operatör karakterlerinin tanımlanması.
 #define OPERATOR_CASE_EXCLUDING_DIVISION \
     case '+':                           \
     case '-':                           \
@@ -48,6 +51,7 @@ struct pos
     case '.':                           \
     case '?'                          
 
+// Sembol karakterlerinin tanımalnması.
 #define SYMBOL_CASE \
     case '{':       \
     case '}':       \
@@ -56,13 +60,16 @@ struct pos
     case '#':       \
     case '\\':      \
     case ')':       \
-    case ']'      
+    case ']'  
+
+// Analiz işlemi sonrası geri bildirim mesajları burada tutuluyor..      
 enum
 {
     LEXICAL_ANALYSIS_ALL_OK,
     LEXICAL_ANALYSIS_INPUT_ERROR
 };
 
+// Token tipleri için.(yeni satır,sembol,string,yorum satırı...vb)
 enum
 {
     TOKEN_TYPE_IDENTIFIER,
@@ -75,7 +82,7 @@ enum
     TOKEN_TYPE_NEWLINE
 };
 
-
+// Sayı tipleri burada tutuluyor.
 enum
 {
     NUMBER_TYPE_NORMAL,
@@ -84,11 +91,14 @@ enum
     NUMBER_TYPE_DOUBLE
 };
 
+// Sözcüksel analiz[1] için token yapıları tanımlanması.
 struct token
 {
     int type;
     int flags;
-    struct pos pos;
+    struct pos pos; // Token dosyanın neresinde olduğunu anlamak için değişken ataması.
+
+    // Union içine yazılan herşey aynı belleği paylaşır.
     union
     {
         char cval;
@@ -104,15 +114,14 @@ struct token
         int type;
     } num;
 
-    // True if their is whitespace between the token and the next token
-    // i.e * a for operator token * would mean whitespace would be set for token "a"
+    // Eğer tokenler arası boşluk varsa True.
     bool whitespace;
 
-    // (5+10+20)
     const char* between_brackets;
 
 };
 
+// Sözcükler arası geçiş için gerekli fonksyonlar.
 struct lex_process;
 typedef char (*LEX_PROCESS_NEXT_CHAR)(struct lex_process* process);
 typedef char (*LEX_PROCESS_PEEK_CHAR)(struct lex_process* process);
@@ -125,25 +134,23 @@ struct lex_process_functions
     LEX_PROCESS_PUSH_CHAR push_char;
 };
 
+// Sözcüksel analiz işlemi.(Sözcük derken string anlamında değil her şey olabilir.Örn. 3, / ,  , ü)
 struct lex_process
 {
     struct pos pos;
     struct vector* token_vec;
     struct compile_process* compiler;
 
-    /**
-     * 
-     * ((50))
-     */
+    // Lex(sözcük) kaç satır arasında olduğunu tutan değişken.örn. ((50))
     int current_expression_count;
     struct buffer* parentheses_buffer;
     struct lex_process_functions* function;
 
-    // This will be private data that the lexer does not understand
-    // but the person using the lexer does understand.
+    /* Derleyicinin anlayamadığı ama kullanıcının anlayabildiği veriler için.*/
     void* private;
 };
 
+// Hata mesajları burada tutuluyor.
 enum
 {
     COMPILER_FILE_COMPILED_OK,
@@ -152,23 +159,21 @@ enum
 
 struct compile_process
 {
-    // The flags in regards to how this file should be compiled
+    /*Bu dosyanın nasıl derlenmesi gerektiğine ilişkin bayraklar.*/
     int flags;
 
-    struct pos pos;
+    struct pos pos;  // Sözcüksel analiz[3], sözcüğün pozisyonunu(satır,sütun) öğrenmek için değişken tanımlanması.
     struct compile_process_input_file
     {
         FILE* fp;
         const char* abs_path;
     } cfile;
 
-
-    // A vector of tokens from lexical analysis.
     struct vector* token_vec;
     FILE* ofile;
-
 };
 
+/*Derleyici, derleyicimiz boyunca erişilmesi gereken işlevler için tüm prototipleri içerecektir.*/
 int compile_file(const char* filename, const char* out_filename, int flags);
 struct compile_process *compile_process_create(const char *filename, const char *filename_out, int flags);
 
@@ -188,7 +193,7 @@ struct vector* lex_process_tokens(struct lex_process* process);
 int lex(struct lex_process* process);
 
 /**
- * @brief Builds tokens for the input string.
+ * @brief
  * 
  * @param compiler 
  * @param str 

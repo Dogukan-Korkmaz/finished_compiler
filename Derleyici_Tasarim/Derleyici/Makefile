@@ -1,6 +1,9 @@
+#Bu dosyada gcc ile build işlemi yapılıyor.
 OBJECTS= ./build/compiler.o ./build/cprocess.o ./build/lexer.o ./build/token.o ./build/lex_process.o ./build/helpers/buffer.o ./build/helpers/vector.o 
+# "-I./" Dahil etme dizisini göreceli hale getirir.
 INCLUDES= -I./
 
+# "-g" debugging sembollerini, "-o" output dosyasını temsil ediyor.
 all: ${OBJECTS}
 	gcc main.c ${INCLUDES} ${OBJECTS} -g -o ./main 
 
@@ -27,6 +30,7 @@ all: ${OBJECTS}
 ./build/helpers/vector.o: ./helpers/vector.c
 	gcc ./helpers/vector.c ${INCLUDES} -o ./build/helpers/vector.o -g -c
 
+# clean komutu main dosyasını ve bütün objeleri silecek.
 clean:
 	rm ./main
 	rm -rf ${OBJECTS}

@@ -1,9 +1,11 @@
+// Ana Sözcüksel analiz bloğu.
+
 #include "compiler.h"
 #include "helpers/vector.h"
 #include "helpers/buffer.h"
 #include <string.h>
 #include <assert.h>
-#include <ctype.h>
+#include <ctype.h> //isalpha() fonksyonu bu kütüphanede.
 
 #define LEX_GETC_IF(buffer, c, exp)     \
     for (c = peekc(); exp; c = peekc()) \
@@ -12,17 +14,18 @@
         nextc();                        \
     }
 
-struct token *read_next_token();
+struct token *read_next_token();// Lexer.c belgesinde ilk bu fonksyonun çalışmasını istiyoruz.
 bool lex_is_in_expression();
 
 static struct lex_process *lex_process;
-static struct token tmp_token;
+static struct token tmp_token;// Geçici tokenler için değişken tanımı.
 
 static char peekc()
 {
     return lex_process->function->peek_char(lex_process);
 }
 
+//Bir sonraki karakteri okuma fonksyonu.
 static char nextc()
 {
     char c = lex_process->function->next_char(lex_process);
@@ -31,7 +34,7 @@ static char nextc()
         buffer_write(lex_process->parentheses_buffer, c);
     }
     lex_process->pos.col += 1;
-    if (c == '\n')
+    if (c == '\n')// Satır sonuna gelince bir alt satıra geçmesi için if kullanıyoruz.
     {
         lex_process->pos.line += 1;
         lex_process->pos.col = 1;
@@ -73,6 +76,8 @@ static struct token *lexer_last_token()
     return vector_back_or_null(lex_process->token_vec);
 }
 
+/*Karakterler arasındaki boşluğu algılayan ve
+bir sonraki karakterin okunmasını sağlayan fonksyon.*/
 static struct token *handle_whitespace()
 {
     struct token *last_token = lexer_last_token();
@@ -102,6 +107,7 @@ unsigned long long read_number()
     return atoll(s);
 }
 
+/*Numaranın tipinin belirlenmesini sağlayan fonksyon.*/
 int lexer_number_type(char c)
 {
     int res = NUMBER_TYPE_NORMAL;
@@ -117,6 +123,9 @@ int lexer_number_type(char c)
     return res;
 }
 
+/* Decimal(2134),hexadecimal(0x500),binary(0b1000) gibisayı değerlerini tanımlama
+ sırasında birbirlerinden ayıracak fonksyon,"unsigned" tanımlanmamamış değişkenler için kullanılı
+bize gelecek sayının tipini bilmediğimiz için kullanıyoruz.*/
 struct token *token_make_number_for_value(unsigned long number)
 {
     int number_type = lexer_number_type(peekc());
@@ -132,16 +141,18 @@ struct token *token_make_number()
     return token_make_number_for_value(read_number());
 }
 
+/*String karakterlerin token hale gelmesini sağlayan fonksyon, iki argümanı var, biri string
+karakter dizisinin başladığı diğeri bittiği zamanı algılamak için örn. "merhaba dünya" burada arüman tırnak işaretidir.*/
 static struct token *token_make_string(char start_delim, char end_delim)
 {
     struct buffer *buf = buffer_create();
     assert(nextc() == start_delim);
     char c = nextc();
-    for (; c != end_delim && c != EOF; c = nextc())
+    for (; c != end_delim && c != EOF; c = nextc())//Karakter limitin sonuna veya dosyanın sonuna gelene kadar sonraki karakteri okuaycaktır.
     {
         if (c == '\\')
         {
-            // We need to handle an escape character.
+             /*'\n' gibi kaçış işaretleri burada algılanacak.Buraya daha sonra geri döneceğim.!!!*/
             continue;
         }
 
@@ -152,11 +163,13 @@ static struct token *token_make_string(char start_delim, char end_delim)
     return token_create(&(struct token){.type = TOKEN_TYPE_STRING, .sval = buffer_ptr(buf)});
 }
 
+// Operatörlerin bir bütün olarak değil, tek tek algılanmasını sağlayacak fonksyon.
 static bool op_treated_as_one(char op)
 {
     return op == '(' || op == '[' || op == ',' || op == '.' || op == '*' || op == '?';
 }
 
+// Tek başına kullanılan operatörleri döndüren fonksyon.
 static bool is_single_operator(char op)
 {
     return op == '+' ||
@@ -179,6 +192,8 @@ static bool is_single_operator(char op)
            op == '?';
 }
 
+/* S_EQ makrosunu kullanarak girilen operatörün geçerli ise döndürümesini
+sağlayan fonksyon.*/
 bool op_valid(const char *op)
 {
     return S_EQ(op, "+") ||
@@ -230,6 +245,10 @@ void read_op_flush_back_keep_first(struct buffer* buffer)
         pushc(data[i]);
     }
 }
+
+/*Operatörlerin okumasını sağlayan fonksyon.
+Yazdığım bazı fonksyonlar ile hangi operatörler
+grup halinde algılanmalı hangisi tekil olarak algılanmalı işlemini yapıyor.*/
 const char *read_op()
 {
     bool single_operator = true;
@@ -248,7 +267,7 @@ const char *read_op()
         }
     }
 
-    // NULL TERMINATOR
+    // Geçersiz karakterler okununca, sonlandırma ve hata verme işlemi.
     buffer_write(buffer, 0x00);
     char *ptr = buffer_ptr(buffer);
     if (!single_operator)
@@ -261,12 +280,13 @@ const char *read_op()
     }
     else if(!op_valid(ptr))
     {
-        compiler_error(lex_process->compiler, "The operator %s is not valid\n", ptr);
+        compiler_error(lex_process->compiler, "Operator %s gecerli degil!\n", ptr);
     }
 
     return ptr;
 }
 
+/*Parantez içi parantezi algılayan ve token işlemini yapan fonksyon.(())*/
 static void lex_new_expression()
 {
     lex_process->current_expression_count++;
@@ -276,19 +296,24 @@ static void lex_new_expression()
     }
 }
 
+/*Parantez içini okumayı bitiren fonksyon*/
 static void lex_finish_expression()
 {
     lex_process->current_expression_count--;
     if (lex_process->current_expression_count < 0)
     {
-        compiler_error(lex_process->compiler, "You closed an expression that you never opened\n");
+        // Sol parantez yokken sağ parantezin açılması durumu hata metni yazdırma. "}" 
+        compiler_error(lex_process->compiler, "Hic acmadiginiz bir ifadeyi kapattiniz!\n");
     }
 }
+
+/*Parantezler(örn. (),{},[] )'nin varlığının algılanmasını sağlayacak fonksyon.*/
 bool lex_is_in_expression()
 {
     return lex_process->current_expression_count > 0;
 }
 
+// Compiler.h belgesinde yazdığımız makroyu kullanarak anahtar kelimeleri tanımlıyoruz.
 bool is_keyword(const char* str)
 {
     return S_EQ(str, "unsigned") ||
@@ -324,6 +349,8 @@ bool is_keyword(const char* str)
             S_EQ(str, "restrict");
 }
 
+/* #include<abc.h> gibi durumlarda operatör ve string tokenleri
+doğru şekilde oluşturacak olan fonksyon.*/
 static struct token *token_make_operator_or_string()
 {
     char op = peekc();
@@ -345,14 +372,20 @@ static struct token *token_make_operator_or_string()
     return token;
 }
 
+/*Yorum bloğu tipi token yaratma fonksyonu.
+Bu fonksyon sadece bir satır olan yorum bloklarını destekler.
+Yani "//" ile başlayan yorum satırları.*/
 struct token* token_make_one_line_comment()
 {
     struct buffer* buffer = buffer_create();
     char c = 0;
-    LEX_GETC_IF(buffer, c, c != '\n' && c != EOF);
+    LEX_GETC_IF(buffer, c, c != '\n' && c != EOF); // Eğer satır sonu değilse ve dosyanın sonu değilse karakterin okunması.
     return token_create(&(struct token){.type=TOKEN_TYPE_COMMENT,.sval=buffer_ptr(buffer)});
 }
 
+/*Yorum bloğu tipi token yaratma fonksyonu.
+Bu fonksyon birden fazla satır olan yorum bloklarını destekler.
+Yani '/*' ile başlayan yorum satırları.Bu yorum satırı gibi.*/
 struct token* token_make_multiline_comment()
 {
     struct buffer* buffer = buffer_create();
@@ -362,11 +395,10 @@ struct token* token_make_multiline_comment()
         LEX_GETC_IF(buffer, c, c != '*' && c != EOF);
         if (c == EOF)
         {
-            compiler_error(lex_process->compiler, "You did not close this multiline comment\n");
+            compiler_error(lex_process->compiler, "Bu çok satirli yorumu blogunu kapatmadiniz !\n");
         }
         else if(c == '*')
         {
-            // Skip the *
             nextc();
 
             if (peekc() == '/')
@@ -379,6 +411,8 @@ struct token* token_make_multiline_comment()
     return token_create(&(struct token){.type=TOKEN_TYPE_COMMENT, .sval=buffer_ptr(buffer)});
 }
 
+/*Durumlara göre çoklu satır yorum bloğu tokeni,
+tek satır yorum bloğu tokeni ve string tokeni oluşturma fonksyonu.*/
 struct token* handle_comment()
 {
     char c = peekc();
@@ -403,29 +437,31 @@ struct token* handle_comment()
     return NULL;
 }
 
-
+/*Sembol token'i yapan fonksyon.*/
 static struct token* token_make_symbol()
 {
     char c = nextc();
-    if (c == ')')
+    if (c == ')') 
     {
-        lex_finish_expression();
+        lex_finish_expression();// Sol parantez algılanınca ifade biter.
     }
 
     struct token* token = token_create(&(struct token){.type=TOKEN_TYPE_SYMBOL,.cval=c});
     return token;
 }
 
+/*Karakterin tanımlayıcı(Tanımlayıcılar, anahtar kelime olmayan ve sayıların harflerden sonra gelmesi gereken herhangi bir sözcük sayı birleşimidir.)
+mı yoksa anahtar kelime mi olduğunu ayıran ve buna göre doğru tip token oluşturup döndüren fonksyon.*/
 static struct token* token_make_identifier_or_keyword()
 {
     struct buffer* buffer = buffer_create();
     char c = 0;
     LEX_GETC_IF(buffer, c, (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_');
 
-    // null terminator
+    // Boşluk sonlandırma (Null Terminator)
     buffer_write(buffer, 0x00);
 
-    // Check if this is a keyword
+    // Anahtar kelime olup olmadığına bakılması.
     if (is_keyword(buffer_ptr(buffer)))
     {
         return token_create(&(struct token){.type=TOKEN_TYPE_KEYWORD,.sval=buffer_ptr(buffer)});
@@ -434,6 +470,9 @@ static struct token* token_make_identifier_or_keyword()
     return token_create(&(struct token){.type=TOKEN_TYPE_IDENTIFIER,.sval=buffer_ptr(buffer)});
 }
 
+/*Yakalayamadığımız özel durum olursa onların da
+token_make_identifier_or_keyword() fonksyonuna dahil edilmesi.
+Karakterin alfabetik olması veya "_" ile başlaması gibi.*/
 struct token* read_special_token()
 {
     char c =peekc();
@@ -445,12 +484,14 @@ struct token* read_special_token()
     return NULL;
 }
 
+// Satır tipi token oluşturma fonksyonu.
 struct token* token_make_newline()
 {
     nextc();
     return token_create(&(struct token){.type=TOKEN_TYPE_NEWLINE});
 }
 
+/* Karakteri gerçek ikili eşdeğere dönüştüren fonkyson.*/
 char lex_get_escaped_char(char c)
 {
     char co = 0;
@@ -495,10 +536,11 @@ const char* read_hex_number_str()
     buffer_write(buffer, 0x00);
     return buffer_ptr(buffer);
 }
+
+/*Hexadecimal sayı tokeni oluşturma fonksyonu.*/
 struct token* token_make_special_number_hexadecimal()
-{
-    // Skip the "x"
-    nextc();
+{  
+    nextc();// "x" karakterini geçiyoruz.
 
     unsigned long number = 0;
     const char* number_str = read_hex_number_str();
@@ -513,15 +555,15 @@ void lexer_validate_binary_string(const char* str)
     {
        if (str[i] != '0' && str[i] != '1')
        {
-           compiler_error(lex_process->compiler, "This is not a valid binary number\n");
+           compiler_error(lex_process->compiler, "Bu geçerli bir ikili sayi değil !\n");
        }
     }
 }
 
+/*Binary sayı tokeni oluşturma fonksyonu.Örn. 0b111011001*/
 struct token* token_make_special_number_binary()
-{
-    // Skip the "b"
-    nextc();
+{   
+    nextc();// "b" karakterini geçiyoruz.
 
     unsigned long number = 0;
     const char* number_str = read_number_str();
@@ -530,6 +572,7 @@ struct token* token_make_special_number_binary()
     return token_make_number_for_value(number);
 }
 
+/*Özel numara tiplerini token'e dönüştürme fonksyonu.*/
 struct token* token_make_special_number()
 {
     struct token* token = NULL;
@@ -543,7 +586,8 @@ struct token* token_make_special_number()
 
     char c = peekc();
     if (c == 'x')
-    {
+    {   /*peekc bir sonraki karakterin x olduğunu görünce bu hexadecimal token gerekiyor demek.
+        örneğin 0xAB12*/ 
         token = token_make_special_number_hexadecimal();
     }
     else if(c == 'b')
@@ -553,6 +597,8 @@ struct token* token_make_special_number()
 
     return token;
 }
+
+/* (')  işaretinin token desteğini sağlayan fonksyon.*/
 struct token* token_make_quote()
 {
     assert_next_char('\'');
@@ -565,12 +611,13 @@ struct token* token_make_quote()
 
     if (nextc() != '\'')
     {
-        compiler_error(lex_process->compiler, "You opened a quote ' but did not close it with a ' character");
+        compiler_error(lex_process->compiler, " Bir  '  açtiniz ancak  '  karakteriyle kapatmadiniz");
     }
 
     return token_create(&(struct token){.type=TOKEN_TYPE_NUMBER, .cval=c});
 }
 
+// Bir sonraki token'i okunmasını sağlayacak fonksiyon.
 struct token *read_next_token()
 {
     struct token *token = NULL;
@@ -582,7 +629,8 @@ struct token *read_next_token()
         return token;
     }
 
-    
+    /*Her bir karakter grubunu compiler.h'de tanıtmıştık.
+    Şimdi teker teker karakterin grubuna uygun fonksyonu çağıracağız.*/
     switch (c)
     {
     NUMERIC_CASE:
@@ -603,30 +651,31 @@ struct token *read_next_token()
         break;
 
     case '"':
-        token = token_make_string('"', '"');
+        token = token_make_string('"', '"');//String karakterler tırnak işareti ile algılanır.
         break;
 
     case '\'':
-        token = token_make_quote();
+        token = token_make_quote();// (') işaretinin algılanması halinde token fonksyonunun çağırlılması.
         break;
-    // We don't care about whitespace ignore them
-    case ' ':
-    case '\t':
+
+    case ' ':// Boşulukları görmezden geleceğiz. 
+    case '\t':// Boşulukları görmezden geleceğiz. 
         token = handle_whitespace();
         break;
 
-    case '\n':
+    case '\n':// Yeni satır algılanınca satır tokeni oluşturacağız.
         token = token_make_newline();
         break;
-    case EOF:
-        // We have finished lexical analysis on the file
+    case EOF:// EOF işlevi, dosyanın sonuna ulaşılana kadar False döndürmesidir.
+        // Sözcüksel analiz işlemi bitti.
         break;
 
+    // Derleyicimiz tarafından desteklenmeyen karakter okunduğunda çalışacak kısım.
     default:
-        token = read_special_token();
+        token = read_special_token();// Özel durumların yakalanması, hataya yol açmamalı.
         if (!token)
         {
-            compiler_error(lex_process->compiler, "Unexpected token\n");
+            compiler_error(lex_process->compiler, "Desteklenmeyen karakter tespit edildi!\n");
         }
     }
     return token;
@@ -639,6 +688,7 @@ int lex(struct lex_process *process)
     lex_process = process;
     process->pos.filename = process->compiler->cfile.abs_path;
 
+    //Girilen c dosyasındaki bütün karakterleri okuyacak.
     struct token *token = read_next_token();
     while (token)
     {
@@ -647,7 +697,6 @@ int lex(struct lex_process *process)
     }
     return LEXICAL_ANALYSIS_ALL_OK;
 }
-
 
 char lexer_string_buffer_next_char(struct lex_process* process)
 {
